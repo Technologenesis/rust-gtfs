@@ -1,10 +1,11 @@
 use csv;
+use std::f32::consts::E;
 use std::io;
 use std::iter;
 use std::collections;
 use std::fmt;
 use std::str::FromStr;
-
+use std::num;
 use chrono;
 use crate::gtfs::routes;
 
@@ -14,7 +15,7 @@ pub struct StopTimes {
 }
 
 impl StopTimes {
-    fn iter(&self) -> impl Iterator<Item = &StopTime> {
+    pub fn iter(&self) -> impl Iterator<Item = &StopTime> {
         self.stop_times.values().map(<&Vec<StopTime>>::into_iter).flatten()
     }
 }
@@ -65,12 +66,12 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for StopTimes {
                                     |record|
                                     StopTime::try_from(
                                         // Zip the header and record together,
-                                        iter::zip(
+                                        &(iter::zip(
                                             header.iter().map(|s| s.to_string()),
                                             record.iter().map(|s| s.to_string())
                                         )
                                         // and collect the results into a HashMap.
-                                        .collect::<collections::HashMap<String, String>>()
+                                        .collect::<collections::HashMap<String, String>>())
                                     )
                                     // if there is an error creating the StopTime object from the HashMap, return that error.
                                     .map_err(|err| StopTimesCsvLoadError::StopTimeLoadError(err))
@@ -79,7 +80,10 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for StopTimes {
                                 |stop_time| {
                                     // insert the StopTime object into the HashMap.
                                     stop_times.get_mut(&stop_time.trip_id)
-                                        .map(|v: &mut Vec<StopTime>| v.push(stop_time));
+                                        .map(|v: &mut Vec<StopTime>| v.push(stop_time.clone()))
+                                        .unwrap_or_else(|| {
+                                            stop_times.insert(stop_time.trip_id.clone(), vec![stop_time]);
+                                        });
                                     // return the updated HashMap.
                                     stop_times
                                 }
@@ -92,18 +96,18 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for StopTimes {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StopTime {
     pub trip_id: String,
     pub stop_id: Option<String>,
-    pub arrival_time: Option<chrono::NaiveDateTime>,
-    pub departure_time: Option<chrono::NaiveDateTime>,
+    pub arrival_time: Option<chrono::NaiveTime>,
+    pub departure_time: Option<chrono::NaiveTime>,
     pub location_group_id: Option<String>,
     pub location_id: Option<String>,
     pub stop_sequence: usize,
     pub stop_headsign: Option<String>,
-    pub start_pickup_drop_off_window: Option<chrono::NaiveDateTime>,
-    pub end_pickup_drop_off_window: Option<chrono::NaiveDateTime>,
+    pub start_pickup_drop_off_window: Option<chrono::NaiveTime>,
+    pub end_pickup_drop_off_window: Option<chrono::NaiveTime>,
     pub pickup_type: Option<StopPolicy>,
     pub drop_off_type: Option<StopPolicy>,
     pub continuous_pickup: Option<routes::RouteContinuityPolicy>,
@@ -114,7 +118,7 @@ pub struct StopTime {
     pub drop_off_booking_rule_id: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StopPolicy {
     RegularlyScheduled,
     Unavailable,
@@ -123,145 +127,216 @@ pub enum StopPolicy {
 }
 
 #[derive(Debug)]
+pub enum StopPolicyLoadError {
+    InvalidStopPolicy(String),
+}
+
+impl fmt::Display for StopPolicyLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidStopPolicy(s) => write!(f, "Invalid stop policy: {}", s),
+        }
+    }
+}
+
+impl FromStr for StopPolicy {
+    type Err = StopPolicyLoadError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "0" => StopPolicy::RegularlyScheduled,
+            "1" => StopPolicy::Unavailable,
+            "2" => StopPolicy::Prearrange,
+            "3" => StopPolicy::CoordinateWithDriver,
+            _ => return Err(StopPolicyLoadError::InvalidStopPolicy(s.to_string())),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Timepoint {
     Approximate,
     Exact,
 }
 
+pub enum TimepointLoadError {
+    InvalidTimepoint(String),
+}
+
+impl fmt::Display for TimepointLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidTimepoint(s) => write!(f, "Invalid timepoint: {}", s),
+        }
+    }
+}
+
+impl FromStr for Timepoint {
+    type Err = TimepointLoadError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "0" => Timepoint::Approximate,
+            "1" => Timepoint::Exact,
+            _ => return Err(TimepointLoadError::InvalidTimepoint(s.to_string())),
+        })
+    }
+}
+
+
 pub enum StopTimeLoadError {
     TripIdRequired,
-    RouteIdRequired,
-    ServiceIdRequired,
-    TripHeadsignError(String),
-    TripShortNameError(String),
-    DirectionIdError(String),
-    BlockIdError(String),
-    ShapeIdRequired,
-    WheelchairAccessibleError(String),
-    BikesAllowedError(String),
+    ArrivalTimeError(ParseTimeError),
+    DepartureTimeError(ParseTimeError),
+    StopSequenceRequired,
+    StopSequenceError(num::ParseIntError),
+    StartPickupDropOffWindowError(ParseTimeError),
+    EndPickupDropOffWindowError(ParseTimeError) ,
+    PickupTypeError(StopPolicyLoadError),
+    DropOffTypeError(StopPolicyLoadError),
+    ContinuousPickupError(routes::RouteContinuityPolicyLoadError),
+    ContinuousDropOffError(routes::RouteContinuityPolicyLoadError),
+    ShapeDistTraveledError(num::ParseFloatError),
+    TimepointError(TimepointLoadError),
 }
 
 impl fmt::Display for StopTimeLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TripIdRequired => write!(f, "trip_id is required"),
-            Self::RouteIdRequired => write!(f, "route_id is required"),
-            Self::ServiceIdRequired => write!(f, "service_id is required"),
-            Self::TripHeadsignError(e) => write!(f, "Error parsing trip headsign: {}", e),
-            Self::TripShortNameError(e) => write!(f, "Error parsing trip short name: {}", e),
-            Self::DirectionIdError(e) => write!(f, "Error parsing direction id: {}", e),
-            Self::BlockIdError(e) => write!(f, "Error parsing block id: {}", e),
-            Self::ShapeIdRequired => write!(f, "shape_id is required"),
-            Self::WheelchairAccessibleError(e) => write!(f, "Error parsing wheelchair accessible: {}", e),
-            Self::BikesAllowedError(e) => write!(f, "Error parsing bikes allowed: {}", e),
+            Self::ArrivalTimeError(e) => write!(f, "Error parsing arrival time: {}", e),
+            Self::DepartureTimeError(e) => write!(f, "Error parsing departure time: {}", e),
+            Self::StopSequenceRequired => write!(f, "stop_sequence is required"),
+            Self::StopSequenceError(e) => write!(f, "Error parsing stop sequence: {}", e),
+            Self::StartPickupDropOffWindowError(e) => write!(f, "Error parsing start pickup drop off window: {}", e),
+            Self::EndPickupDropOffWindowError(e) => write!(f, "Error parsing end pickup drop off window: {}", e),
+            Self::PickupTypeError(e) => write!(f, "Error parsing pickup type: {}", e),
+            Self::DropOffTypeError(e) => write!(f, "Error parsing drop off type: {}", e),
+            Self::ContinuousPickupError(e) => write!(f, "Error parsing continuous pickup: {}", e),
+            Self::ContinuousDropOffError(e) => write!(f, "Error parsing continuous drop off: {}", e),
+            Self::ShapeDistTraveledError(e) => write!(f, "Error parsing shape dist traveled: {}", e),
+            Self::TimepointError(e) => write!(f, "Error parsing timepoint: {}", e),
         }
     }
 }
 
 // Route implements TryFrom<collections::HashMap<String, String>> by interpreting the keys as field names, and
 // the values as string-encoded values for those fields.
-impl TryFrom<collections::HashMap<String, String>> for StopTime {
+impl TryFrom<&collections::HashMap<String, String>> for StopTime {
     type Error = StopTimeLoadError;
 
-    fn try_from(fields: collections::HashMap<String, String>) -> Result<Self, Self::Error> {
+    fn try_from(fields: &collections::HashMap<String, String>) -> Result<Self, Self::Error> {
         Ok(StopTime {
-            trip_id: fields.remove("trip_id")
+            trip_id: fields.get("trip_id")
                 .filter(|s| !s.is_empty())
-                .ok_or(StopTimeLoadError::TripIdRequired)?,
-            stop_id: fields.remove("stop_id")
-                .filter(|s| !s.is_empty()),
-            arrival_time: match
-                fields.remove("arrival_time")
-                .filter(|s| !s.is_empty()) {
-                    Some(s) => chrono::NaiveTime::from_str(&s)
-                        .map_err(StopTimeLoadError::ArrivalTimeError)
-                        .map(|t| Some(t)),
-                    None => Ok(None),
-                }?,
-            departure_time: match
-                fields.remove("departure_time")
-                .filter(|s| !s.is_empty()) {
-                    Some(s) => chrono::NaiveTime::from_str(&s)
-                        .map_err(StopTimeLoadError::DepartureTimeError)
-                        .map(|t| Some(t)),
-                    None => Ok(None),
-                }?,
-            location_group_id: fields.remove("location_group_id")
-                .filter(|s| !s.is_empty()),
-            location_id: fields.remove("location_id")
-                .filter(|s| !s.is_empty()),
-            stop_sequence: fields.remove("stop_sequence")
+                .ok_or(StopTimeLoadError::TripIdRequired)
+                .cloned()?,
+            stop_id: fields.get("stop_id")
+                .filter(|s| !s.is_empty())
+                .cloned(),
+            arrival_time: fields.get("arrival_time")
+                .filter(|s| !s.is_empty())
+                .map(|s| parse_time(&s))
+                .transpose()
+                .map_err(|e| StopTimeLoadError::ArrivalTimeError(e))?,
+            departure_time: fields.get("departure_time")
+                .filter(|s| !s.is_empty())
+                .map(|s| parse_time(&s))
+                .transpose()
+                .map_err(|e| StopTimeLoadError::DepartureTimeError(e))?,
+            location_group_id: fields.get("location_group_id")
+                .filter(|s| !s.is_empty())
+                .cloned(),
+            location_id: fields.get("location_id")
+                .filter(|s| !s.is_empty())
+                .cloned(),
+            stop_sequence: fields.get("stop_sequence")
                 .filter(|s| !s.is_empty())
                 .ok_or(StopTimeLoadError::StopSequenceRequired)?
-                .parse::<usize>()?,
-            stop_headsign: fields.remove("stop_headsign")
-                .filter(|s| !s.is_empty()),
-            start_pickup_drop_off_window: match
-                fields.remove("start_pickup_drop_off_window")
-                .filter(|s| !s.is_empty()) {
-                    Some(s) => chrono::NaiveDateTime::from_str(&s)
-                        .map_err(StopTimeLoadError::StartPickupDropOffWindowError)
-                        .map(|t| Some(t)),
-                    None => Ok(None),
-                }?,
-            end_pickup_drop_off_window: match
-                fields.remove("end_pickup_drop_off_window")
-                .filter(|s| !s.is_empty()) {
-                    Some(s) => chrono::NaiveDateTime::from_str(&s)
-                        .map_err(StopTimeLoadError::EndPickupDropOffWindowError)
-                        .map(|t| Some(t)),
-                    None => Ok(None),
-                }?,
-            pickup_type: fields.remove("pickup_type")
+                .parse::<usize>()
+                .map_err(StopTimeLoadError::StopSequenceError)?,
+            stop_headsign: fields.get("stop_headsign")
+                .filter(|s| !s.is_empty())
+                .cloned(),
+            start_pickup_drop_off_window: fields.get("start_pickup_drop_off_window")
+                .filter(|s| !s.is_empty())
+                .map(|s| parse_time(&s))
+                .transpose()
+                .map_err(|e| StopTimeLoadError::StartPickupDropOffWindowError(e))?,
+            end_pickup_drop_off_window: fields.get("end_pickup_drop_off_window")
+                .filter(|s| !s.is_empty())
+                .map(|s| parse_time(&s))
+                .transpose()
+                .map_err(|e| StopTimeLoadError::EndPickupDropOffWindowError(e))?,
+            pickup_type: fields.get("pickup_type")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<StopPolicy>())
-                .and_then(|p| p.map_err(StopTimeLoadError::PickupTypeError))
-                .ok(),
+                .transpose()
+                .map_err(StopTimeLoadError::PickupTypeError)?,
             drop_off_type: fields.get("drop_off_type")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<StopPolicy>())
-                .and_then(|p| p.map_err(StopTimeLoadError::DropOffTypeError))
-                .ok(),
+                .transpose()
+                .map_err(StopTimeLoadError::DropOffTypeError)?,
             continuous_pickup: fields.get("continuous_pickup")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<routes::RouteContinuityPolicy>())
-                .and_then(|p| p.map_err(StopTimeLoadError::ContinuousPickupError))
-                .ok(),
+                .transpose()
+                .map_err(StopTimeLoadError::ContinuousPickupError)?,
             continuous_drop_off: fields.get("continuous_drop_off")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<routes::RouteContinuityPolicy>())
-                .and_then(|p| p.map_err(StopTimeLoadError::ContinuousDropOffError))
-                .ok(),
+                .transpose()
+                .map_err(StopTimeLoadError::ContinuousDropOffError)?,
             shape_dist_traveled: fields.get("shape_dist_traveled")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<f64>())
-                .and_then(|p| p.map_err(StopTimeLoadError::ShapeDistTraveledError))
-                .ok(),
-            wheelchair_accessible: fields.get("wheelchair_accessible")
-                .filter(|s| !s.is_empty())
-                .map(|s| s.parse::<bool>())
-                .and_then(|p| p.map_err(StopTimeLoadError::WheelchairAccessibleError))
-                .ok(),
-            bikes_allowed: fields.get("bikes_allowed")
-                .filter(|s| !s.is_empty())
-                .map(|s| s.parse::<bool>())
-                .and_then(|p| p.map_err(StopTimeLoadError::BikesAllowedError))
-                .ok(),
+                .transpose()
+                .map_err(StopTimeLoadError::ShapeDistTraveledError)?,
             pickup_booking_rule_id: fields.get("pickup_booking_rule_id")
                 .filter(|s| !s.is_empty())
-                .map(|s| s.parse::<String>())
-                .and_then(|p| p.map_err(StopTimeLoadError::PickupBookingRuleIdError))
-                .ok(),
+                .cloned(),
             drop_off_booking_rule_id: fields.get("drop_off_booking_rule_id")
                 .filter(|s| !s.is_empty())
-                .map(|s| s.parse::<String>())
-                .and_then(|p| p.map_err(StopTimeLoadError::DropOffBookingRuleIdError))
-                .ok(),
+                .cloned(),
             timepoint: fields.get("timepoint")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<Timepoint>())
-                .and_then(|p| p.map_err(StopTimeLoadError::TimepointError))
-                .ok(),
+                .transpose()
+                .map_err(StopTimeLoadError::TimepointError)?,
         })
     }
+}
+
+#[derive(Debug)]
+pub enum ParseTimeError {
+    ImproperNumberOfSegments,
+    InvalidHourSegment(num::ParseIntError),
+    InvalidMinuteSegment(num::ParseIntError),
+    InvalidSecondSegment(num::ParseIntError),
+    InvalidTime(u32, u32, u32),
+}
+
+impl fmt::Display for ParseTimeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ImproperNumberOfSegments => write!(f, "Improper number of segments"),
+            Self::InvalidHourSegment(e) => write!(f, "Invalid hour segment: {}", e),
+            Self::InvalidMinuteSegment(e) => write!(f, "Invalid minute segment: {}", e),
+            Self::InvalidSecondSegment(e) => write!(f, "Invalid second segment: {}", e),
+            Self::InvalidTime(h, m, s) => write!(f, "Invalid time '{}:{}:{}'", h, m, s),
+        }
+    }
+}
+
+fn parse_time(s: &str) -> Result<chrono::NaiveTime, ParseTimeError> {
+    let segments = s.split(':').collect::<Vec<&str>>();
+    if segments.len() != 3 {
+        return Err(ParseTimeError::ImproperNumberOfSegments);
+    }
+    let hours = segments[0].parse::<u32>().map_err(|e| ParseTimeError::InvalidHourSegment(e))? % 24;
+    let minutes = segments[1].parse::<u32>().map_err(|e| ParseTimeError::InvalidMinuteSegment(e))?;
+    let seconds = segments[2].parse::<u32>().map_err(|e| ParseTimeError::InvalidSecondSegment(e))?;
+    chrono::NaiveTime::from_hms_opt(hours, minutes, seconds)
+        .ok_or(ParseTimeError::InvalidTime(hours, minutes, seconds))
 }

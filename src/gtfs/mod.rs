@@ -14,15 +14,18 @@ pub struct GtfsSchedule {
     pub stops: stops::Stops,
     pub routes: routes::Routes,
     pub trips: trips::Trips,
+    pub stop_times: stop_times::StopTimes,
 }
 
 pub enum GtfsScheduleLoadError {
     FailedToOpenStops(String, ZipError),
     FailedToOpenRoutes(String, ZipError),
     FailedToOpenTrips(String, ZipError),
+    FailedToOpenStopTimes(String, ZipError),
     FailedToLoadStops(stops::StopsCsvLoadError),
     FailedToLoadRoutes(routes::RoutesCsvLoadError),
     FailedToLoadTrips(trips::TripsCsvLoadError),
+    FailedToLoadStopTimes(stop_times::StopTimesCsvLoadError),
 }
 
 impl fmt::Display for GtfsScheduleLoadError {
@@ -31,9 +34,11 @@ impl fmt::Display for GtfsScheduleLoadError {
             Self::FailedToOpenStops(file, e) => write!(f, "Failed to open {}: {}", file, e),
             Self::FailedToOpenRoutes(file, e) => write!(f, "Failed to open {}: {}", file, e),
             Self::FailedToOpenTrips(file, e) => write!(f, "Failed to open {}: {}", file, e),
+            Self::FailedToOpenStopTimes(file, e) => write!(f, "Failed to open {}: {}", file, e),
             Self::FailedToLoadStops(e) => write!(f, "Failed to load stops: {}", e),
             Self::FailedToLoadRoutes(e) => write!(f, "Failed to load routes: {}", e),
             Self::FailedToLoadTrips(e) => write!(f, "Failed to load trips: {}", e),
+            Self::FailedToLoadStopTimes(e) => write!(f, "Failed to load stop times: {}", e),
         }
     }
 }
@@ -77,11 +82,24 @@ impl<R: io::Read + io::Seek> TryFrom<zip::ZipArchive<R>> for GtfsSchedule {
                 |e|
                 GtfsScheduleLoadError::FailedToLoadTrips(e)
             )?;
+
+        let stop_times_reader = archive.by_name("stop_times.txt")
+            .map_err(
+                |e|
+                GtfsScheduleLoadError::FailedToOpenStopTimes("stop_times.txt".to_string(), e)
+            )?;
+
+        let stop_times = stop_times::StopTimes::try_from(csv::Reader::from_reader(stop_times_reader))
+            .map_err(
+                |e|
+                GtfsScheduleLoadError::FailedToLoadStopTimes(e)
+            )?;
         
         Ok(Self {
             stops,
             routes,
             trips,
+            stop_times,
         })
     }
 }

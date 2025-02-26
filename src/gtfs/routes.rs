@@ -285,7 +285,7 @@ impl TryFrom<&collections::HashMap<String, String>> for RouteName {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RouteContinuityPolicy {
     Continuous,
     NotContinuous,
@@ -315,7 +315,7 @@ impl FromStr for RouteContinuityPolicy {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum RouteType {
     TramStreetcarLightRail,
     SubwayMetro,
