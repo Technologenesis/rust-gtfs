@@ -6,7 +6,8 @@ use std::collections;
 use colored::Colorize;
 use curl::easy::Easy;
 use std::io;
-
+use std::io::Write;
+use std::iter;
 
 fn main() {
     let mut buf = Vec::new();
@@ -21,30 +22,41 @@ fn main() {
         let mut transfer = response.transfer();
         transfer.write_function(|data| {
             buf.extend_from_slice(data);
-            print!("\rDownloaded {} bytes", buf.len());
+            pre_log(&format!("Downloaded {} bytes", buf.len()));
             Ok(data.len())
         }).unwrap();
         transfer.perform().unwrap_or_else(
             |err| panic!("Failed to download gtfs.zip: {}", err)
         );
-        print!("\r")
     }
 
     match response.response_code() {
         Ok(200) => (),
         _ => panic!("Failed to download gtfs.zip: {}", response.response_code().unwrap()),
     }
-    println!("Downloaded GTFS feed: {} bytes", buf.len());
+    pre_log(&format!("Downloaded GTFS feed: {} bytes", buf.len()));
 
     // interpret as zip archive
     let gtfs_zip = zip::ZipArchive::new(std::io::Cursor::new(buf)).unwrap_or_else(
         |err| panic!("Failed to create zip archive: {}", err)
     );
     // load gtfs feed from archive
-    let gtfs = gtfs::GtfsSchedule::try_from(gtfs_zip).unwrap_or_else(
+    let mut zip_loader = gtfs::loaders::zip_loader::ZipLoader::new(gtfs_zip);
+    zip_loader = zip_loader.with_event_handler(gtfs::loaders::zip_loader::FnZipLoaderEventHandler {
+        on_stops_file_opened: Box::new(|_| pre_log("Opened stops file")),
+        on_stops_loaded: Box::new(|_| pre_log("Loaded stops")),
+        on_routes_file_opened: Box::new(|_| pre_log("Opened routes file")),
+        on_routes_loaded: Box::new(|_| pre_log("Loaded routes")),
+        on_trips_file_opened: Box::new(|_| pre_log("Opened trips file")),
+        on_trips_loaded: Box::new(|_| pre_log("Loaded trips")),
+        on_stop_times_file_opened: Box::new(|_| pre_log("Opened stop times file")),
+        on_stop_times_loaded: Box::new(|_| pre_log("Loaded stop times")),
+    });
+    let gtfs = zip_loader.load().unwrap_or_else(
         |err| panic!("Failed to create gtfs feed: {}", err)
     );
-    println!("Loaded gtfs feed");
+    pre_log("Loaded gtfs feed");
+    println!();
 
     // find all subway, tram, streetcar, light rail, cable tram, or rail lines
     let rail_lines = (&gtfs.routes).into_iter()
@@ -126,7 +138,12 @@ fn main() {
                 .into_iter()
                 .filter_map(|(stop_id, stop_times)| stop_id.map(|stop_id| (stop_id, stop_times)))
                 .filter_map(|(stop_id, stop_time)| gtfs.stops.stops.get(&stop_id).map(|stop| (stop, stop_time))) {
-            println!("  {}: {} stop times", stop.get_stop_name().unwrap_or(&format!("Stop ID {}", stop.stop_id)), stop_times.len());
+            println!("  {}: {} stop times",
+                (|s: &str| route.route_color.or(route.route_text_color).map(
+                    |color|
+                    s.truecolor(color.r, color.g, color.b)
+                ).unwrap_or_else(|| colored::ColoredString::from(s)))(stop.get_stop_name().unwrap_or(&format!("Stop ID {}", stop.stop_id))),
+                stop_times.len());
             for stop_time in stop_times.iter().take(5) {
                 println!("    {}", stop_time.departure_time.or(stop_time.arrival_time).map(|time| time.format("%H:%M:%S").to_string()).unwrap_or(String::from("unknown stop time")));
             }
@@ -134,6 +151,12 @@ fn main() {
                 println!("    ...");
             }
         }
-        io::stdin().read_line(&mut String::new()).unwrap();
+        // io::stdin().read_line(&mut String::new()).unwrap();
     }
+}
+
+fn pre_log(message: &str) {
+    print!("\r{}", iter::repeat(" ").take(80).collect::<String>());
+    print!("\r{}", message.truecolor(128, 128, 128));
+    io::stdout().flush().unwrap();
 }
