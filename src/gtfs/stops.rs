@@ -101,7 +101,7 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for Stops {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Stop {
     pub stop_id: String,
     pub stop_code: Option<String>,
@@ -226,7 +226,7 @@ impl TryFrom<collections::HashMap<String, String>> for Stop {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LocationTypeDetails {
     Stop(StopDetails),
     Station(StationDetails),
@@ -241,7 +241,7 @@ impl TryFrom<&collections::HashMap<String, String>> for LocationTypeDetails {
     fn try_from(fields: &collections::HashMap<String, String>) -> Result<Self, Self::Error> {
         let zero_str = String::from("0");
 
-        let location_type = fields.get("location_type").unwrap_or(&zero_str);
+        let location_type = fields.get("location_type").filter(|s| !s.is_empty()).unwrap_or(&zero_str);
 
         match location_type.parse::<u8>()
             .map_err(
@@ -259,7 +259,7 @@ impl TryFrom<&collections::HashMap<String, String>> for LocationTypeDetails {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StopDetails {
     pub stop_name: String,
     pub stop_lat: f64,
@@ -291,7 +291,7 @@ impl TryFrom<&collections::HashMap<String, String>> for StopDetails {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StationDetails {
     pub stop_name: String,
     pub stop_lat: f64,
@@ -321,7 +321,7 @@ impl TryFrom<&collections::HashMap<String, String>> for StationDetails {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EntranceExitDetails {
     pub stop_name: String,
     pub stop_lat: f64,
@@ -356,7 +356,7 @@ impl TryFrom<&collections::HashMap<String, String>> for EntranceExitDetails {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GenericNodeDetails {
     pub     stop_name: Option<String>,
     pub stop_lat: Option<f64>,
@@ -400,7 +400,7 @@ impl TryFrom<&collections::HashMap<String, String>> for GenericNodeDetails {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BoardingAreaDetails {
     pub stop_name: Option<String>,
     pub stop_lat: Option<f64>,

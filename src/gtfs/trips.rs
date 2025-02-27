@@ -109,7 +109,7 @@ pub struct Trip {
     pub trip_short_name: Option<String>,
     pub direction_id: Option<Direction>,
     pub block_id: Option<String>,
-    pub shape_id: String,
+    pub shape_id: Option<String>,
     pub wheelchair_accessible: Option<bool>,
     pub bikes_allowed: Option<bool>,
 }
@@ -195,8 +195,7 @@ impl TryFrom<collections::HashMap<String, String>> for Trip {
             block_id: fields.get("block_id").filter(|s| !s.is_empty()).cloned(),
             shape_id: fields.get("shape_id")
                 .filter(|s| !s.is_empty())
-                .ok_or(TripLoadError::ShapeIdRequired)?
-                .clone(),
+                .cloned(),
             wheelchair_accessible: match fields.get("wheelchair_accessible")
                     .filter(|s| !s.is_empty())
                 {

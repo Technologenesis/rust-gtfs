@@ -143,8 +143,17 @@ impl Route {
         }
     }
 
-    pub fn name(&self) -> &str {
-        self.long_or_short_name()
+    pub fn name(&self) -> String {
+        match self.route_long_name() {
+            Some(long_name) => match self.route_short_name() {
+                Some(short_name) => format!("{} ({})", long_name, short_name),
+                None => long_name.to_string()
+            },
+            None => match self.route_short_name() {
+                Some(short_name) => short_name.to_string(),
+                None => self.route_id.clone()
+            }
+        }
     }
 }
 
