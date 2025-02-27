@@ -1,4 +1,5 @@
 mod gtfs;
+mod commands;
 
 use gtfs::routes;
 use gtfs::stop_times;
@@ -87,6 +88,7 @@ fn main() {
             }
         );
     println!("Mapped trips by rail line;");
+
     // print all trips for each rail line
     for (route_id, trip_ids) in &trips_by_rail_line {
         gtfs.routes.routes.get(route_id)
