@@ -8,6 +8,7 @@ use std::str::FromStr;
 use hex_color;
 
 // Routes is a collection of routes, indexed by route_id.
+#[derive(Debug, Clone)]
 pub struct Routes {
     pub routes: std::collections::HashMap<String, Route>
 }
@@ -102,7 +103,7 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for Routes {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Route {
     pub route_id: String,
     pub agency_id: Option<String>,
@@ -253,7 +254,7 @@ impl TryFrom<collections::HashMap<String, String>> for Route {
 // RouteName is a type that represents the name of a route.
 // It represents the requirement that a route must have at
 // least one of a short name or a long name.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RouteName {
     Short(String),
     Long(String),
@@ -324,7 +325,7 @@ impl FromStr for RouteContinuityPolicy {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum RouteType {
     TramStreetcarLightRail,
     SubwayMetro,

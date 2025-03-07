@@ -7,6 +7,7 @@ use std::fmt;
 use std::str::FromStr;
 
 // Stops is a collection of stops, indexed by stop_id.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Stops {
     pub stops: std::collections::HashMap<String, Stop>
 }

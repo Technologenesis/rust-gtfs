@@ -10,6 +10,7 @@ use chrono;
 use crate::gtfs::routes;
 
 // StopTimes is a collection of stop times, indexed by trip_id.
+#[derive(Debug, Clone)]
 pub struct StopTimes {
     pub stop_times: std::collections::HashMap<String, Vec<StopTime>>
 }
@@ -52,13 +53,10 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for StopTimes {
                 // to create the actual collection of stop times, we need to iterate over the records
                 stop_times: r.into_records()
                     // and fold them into an overarching result containing the collection.
-                    .fold(
-                        Ok(collections::HashMap::new()),
+                    .try_fold(
+                        collections::HashMap::new(),
                         // at each stage of the fold,
-                        |stop_times_result, record_result|
-                        // proceed only if the running result is Ok.
-                        stop_times_result
-                        .and_then(|mut stop_times|
+                        |mut stop_times, record_result|
                             // if there was an error reading this record, return that error.
                             record_result.map_err(StopTimesCsvLoadError::CSVReadError)
                                 .and_then(
@@ -88,7 +86,6 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for StopTimes {
                                     stop_times
                                 }
                             )
-                        )
                     // extract the HashMap from the Result, or return the error.
                     )?
             })

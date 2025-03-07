@@ -6,6 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 
 // Trips is a collection of trips, indexed by trip_id.
+#[derive(Debug, Clone)]
 pub struct Trips {
     pub trips: std::collections::HashMap<String, Trip>
 }
@@ -100,7 +101,7 @@ impl<R: io::Read> TryFrom<csv::Reader<R>> for Trips {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Trip {
     pub trip_id: String,
     pub route_id: String,
@@ -115,7 +116,7 @@ pub struct Trip {
 }
 
 // represents two arbitrary opposing directions
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Direction {
     A,
     B
